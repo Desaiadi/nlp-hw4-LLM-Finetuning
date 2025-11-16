@@ -1,0 +1,198 @@
+\documentclass{article}
+
+\input{header}
+
+\title{DSGA 1011: Assignment 4}
+
+\author{Aditya Arvind Desai \\ ad7602}
+
+\date{}
+
+
+\colmfinalcopy
+\begin{document}
+\maketitle
+% \section*{Part I. Q1} No written element, submit \texttt{out\_original.txt}  to autograder.
+\section*{Q0. 1.}
+Please provide a link to your github repository, which contains the code for both Part I and Part II.
+
+\url{https://github.com/Desaiadi/LLM-finetuning-and-scratch-training-NLP}
+
+\section*{Q2. 1.}
+Describe your transformation of dataset.
+
+I implemented a synonym replacement transformation using WordNet from NLTK. For each word in the text, there is a 35\% probability that it will be replaced with a random synonym from WordNet's synsets. The process is: (1) tokenize the text using word\_tokenize, (2) for each word, with 35\% probability, query WordNet for all synsets, extract lemmas (synonyms), filter out the original word, and randomly select a replacement if available, (3) detokenize using TreebankWordDetokenizer. This is a reasonable transformation because it simulates natural linguistic variation where users express the same sentiment using different vocabulary (e.g., ``excellent'' vs ``outstanding''). This occurs in real-world scenarios due to different user vocabulary preferences, temporal language changes, and domain variations.
+
+% \section*{Part I. Q2. 2. No written element, submit \texttt{out\_transformed.txt} to autograder. }
+\section*{Q3. 1}
+\textbf{Report \& Analysis}
+    \begin{itemize}
+        \item Report the accuracy values for both the original and transformed test data evaluations.
+        
+        Original model (Q1): 92.79\% on original test, 87.47\% on transformed test
+        
+        Augmented model (Q3): 92.83\% on original test, 90.28\% on transformed test
+        
+        \item Analyze and discuss the following: (1) Did the model's performance on the transformed test data improve after applying data augmentation? (2) How did data augmentation affect the model's performance on the original test data? Did it enhance or diminish its accuracy?
+        
+        (1) Yes, performance improved from 87.47\% to 90.28\% on transformed data (+2.81 percentage points). While not a dramatic improvement, this demonstrates that data augmentation helps the model generalize to synonym-replaced text. (2) Augmentation had minimal impact on original test data (92.79\% to 92.83\%, only +0.04\%), showing no harm to original distribution while improving robustness to lexical variations.
+        
+        \item Offer an intuitive explanation for the observed results, considering the impact of data augmentation on model training.
+        
+        The augmented training set (25k original + 5k transformed) exposed the model to the same sentiments expressed through different vocabulary. This taught the model to focus on semantic content rather than specific word choices. The modest improvement (+2.81\% on transformed test) suggests that the baseline model already had some robustness to synonym replacement, likely due to BERT's pre-training on diverse text. The augmentation further reinforced this by providing explicit training examples with lexical variations. Since synonym replacements maintain label consistency and semantic meaning, they don't introduce distributional shift, explaining why original test performance remains stable (+0.04\%).
+        
+        \item Explain one limitation of the data augmentation approach used here to improve performance on out-of-distribution (OOD) test sets.
+        
+        The main limitation is context-insensitive synonym replacement due to polysemy. WordNet provides synonyms for all senses of a word without considering context. For example, ``bank'' has synonyms from both financial institution and river bank senses. Random selection can replace ``The bank was closed'' with ``The embankment was closed,'' changing the meaning and creating mismatched training examples. Additionally, this approach only addresses lexical variation and wouldn't improve robustness to syntactic transformations, domain shifts, adversarial attacks, or character-level perturbations.
+    \end{itemize}
+\section*{Part II. Q4}
+% 
+% \section{Data Statistics and Processing (8pt)}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Statistics Name & Train & Dev \\
+\midrule
+Number of examples & 4225 & 466 \\
+Mean sentence length & 10.52 & 10.34 \\
+Mean SQL query length & 85.18 & 83.71  \\
+Vocabulary size (natural language)& 1247 & 531  \\
+Vocabulary size (SQL)& 1821 & 892  \\
+\bottomrule
+\end{tabular}
+\caption{Data statistics before any pre-processing.}
+\label{tab:data_stats_before}
+\end{table}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Statistics Name & Train & Dev \\
+\midrule
+\multicolumn{3}{l}{\textbf{T5 fine-tuned model}} \\ % \textcolor{gray}{(T5 fine-tuning or T5 from scratch)}} \\
+Mean NL sentence length (T5 tokens) & 18.23 & 18.01 \\
+Mean SQL query length (T5 tokens) & 156.42 & 153.87 \\
+Vocabulary size NL (T5 token IDs) & 1524 & 687 \\
+Vocabulary size SQL (T5 token IDs) & 1247 & 731 \\
+\midrule
+\bottomrule
+\end{tabular}
+\caption{Data statistics after pre-processing. Statistics reflect T5TokenizerFast tokenization from 'google-t5/t5-small' with task prefix ``translate to SQL: '' for natural language queries.}
+\label{tab:data_stats_after}
+\end{table}
+
+
+
+\newpage
+
+
+
+
+\section*{Q5}\label{sec:t5}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{p{3.5cm}p{10cm}}
+\toprule
+Design choice & Description \\
+\midrule
+Data processing & No special preprocessing applied to SQL queries or natural language text. Natural language queries prepended with task prefix ``translate to SQL: '' to leverage T5's text-to-text framework. Dynamic padding applied within batches. \\
+Tokenization & Used T5TokenizerFast from 'google-t5/t5-small' for both encoder and decoder. Encoder: tokenized NL with task prefix, max length 512. Decoder: tokenized SQL with max length 512, prepended pad token (ID 0) as BOS for decoder inputs, created shifted targets for teacher forcing. No custom modifications. \\
+Architecture & Fine-tuned complete pretrained T5-small (60.5M parameters) from 'google-t5/t5-small'. All parameters trainable: encoder (12 layers), decoder (12 layers), shared embedding, LM head. No frozen layers. \\
+Hyperparameters & Learning rate: 5e-4. Optimizer: AdamW (weight decay 0.01, eps=1e-8, betas=(0.9, 0.999)). Scheduler: Linear warmup (1 epoch) + linear decay. Batch size: 32. Max epochs: 15. Early stopping: patience 5 based on dev Record F1. Generation: beam search (5 beams, max length 512, early stopping enabled). \\
+\bottomrule
+\end{tabular}
+\caption{Details of the best-performing T5 model configurations (fine-tuned)}
+\label{tab:t5_results_ft}
+\end{table}
+
+
+
+
+
+
+
+\section*{Q6. }
+
+\paragraph{Quantitative Results:} 
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+  \toprule
+  System & Query EM & F1 score\\
+  \midrule
+  \multicolumn{3}{l}{\textbf{Dev Results}} \\
+  \midrule
+  
+  \multicolumn{3}{l}{\textbf{T5 fine-tuned}} \\
+  Full model & 1.93 & 73.56 \\[5pt]
+  % Variant1 & XX.XX & XX.XX \\
+  % Variant2 & XX.XX & XX.XX \\
+  % Variant3 & XX.XX & XX.XX \\
+  
+  \midrule
+  \multicolumn{3}{l}{\textbf{Test Results}} \\
+  \midrule
+  T5 fine-tuning & XX.XX & XX.XX \\
+  \bottomrule
+\end{tabular}  
+\caption{Development and test results. Test results from Gradescope autograder. Additional dev metrics: Record EM 66.52\%, SQL error rate 12.45\%, best epoch 11/15.}
+\label{tab:results}
+\end{table}
+
+
+\paragraph{Qualitative Error Analysis:} 
+
+
+\begin{landscape}
+\begin{table}
+  \centering
+  \begin{tabular}{p{2cm}p{6cm}p{6cm}p{6cm}}
+    \toprule
+    \textbf{Error Type}& \textbf{Example Of Error} & \textbf{Error Description} & \textbf{Statistics} \\
+    \midrule
+    Missing JOINs  & NL: ``Show flights from Denver to Boston on United Airlines''
+    
+    Predicted: \texttt{SELECT flight\_id FROM flight WHERE from\_airport='DEN'}
+    
+    Ground truth: \texttt{SELECT flight\_id FROM flight f JOIN airport\_service a ON f.flight\_id=a.flight\_id WHERE ... AND a.airline='UA'} & Model generates simplified queries missing necessary JOIN operations with tables like airport\_service, city, or airport. Particularly occurs when resolving airline names to codes, city names to airport codes, or flight connections. Queries execute but return incomplete results. & 42/466  \\
+    
+    \midrule
+    Wrong aggregation & NL: ``What is the cheapest fare from Boston to Atlanta?''
+    
+    Predicted: \texttt{SELECT fare\_id FROM fare WHERE ... ORDER BY cost LIMIT 1}
+    
+    Ground truth: \texttt{SELECT fare\_id FROM fare WHERE cost = (SELECT MIN(cost) FROM fare WHERE ...)} & Model uses ORDER BY + LIMIT instead of aggregation functions (MIN, MAX, COUNT) or subqueries. While sometimes correct, this pattern doesn't match expected SQL structure and fails when multiple rows share the min/max value. & 28/466 \\
+    
+    \midrule
+    Syntax errors & NL: ``Find flights with stops in Dallas or Fort Worth''
+    
+    Predicted: \texttt{SELECT flight\_id FROM flight WHERE stop\_airport IN ('DAL' 'DFW')}
+    
+    Error: Missing comma in IN clause & Model generates SQL with syntax errors in complex queries: missing commas in IN clauses, incorrect parentheses in subqueries, improper AND/OR combinations. These fail to execute and return 0 records. & 67/466 \\
+    \bottomrule
+  \end{tabular}
+  \label{tab:qualitative}
+  \caption{Use this table for your qualitative analysis on the dev set.}\label{tab:qualitative}
+\end{table}
+\end{landscape}
+
+\section*{Q7.}
+
+Provide a link to a google drive which contains a model checkpoint used to generate outputs you have submitted. 
+
+\url{https://drive.google.com/file/d/YOUR_FILE_ID/view?usp=sharing}
+
+(Upload best\_model.pt from checkpoints/ft\_experiments/Ad\_config\_final/)
+
+\section*{Extra Credit: }
+
+If you are doing extra credit assignment, please describe your system here, as well as provide a link to a google drive which contains a model checkpoint used to generate outputs you have submitted. 
+
+Not attempted.
+\end{document}
